@@ -13,7 +13,7 @@ pipeline {
         NEXUS_PASSWORD = 'Monish@007'
         
         // SonarQube Configuration
-        SONAR_TOKEN = credentials('sonar-token') // Store your SonarQube token (sqp_6722f360d8d41d26f380967b3b80976e6b7d61ac)
+        SONAR_TOKEN = 'sqp_6722f360d8d41d26f380967b3b80976e6b7d61ac'
         SONAR_HOST_URL = 'http://localhost:9000' // Update if SonarQube is on different port
         SONAR_PROJECT_KEY = 'Demo' // Project key in SonarQube
         // SonarQube installation name in Jenkins (leave empty to use direct connection)
@@ -254,4 +254,5 @@ pipeline {
         }
     }
 }
+
 
