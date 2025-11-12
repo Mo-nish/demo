@@ -2,12 +2,12 @@ pipeline {
     agent any
     
     environment {
-        DOCKER_REGISTRY = 'localhost:8081' 
+        DOCKER_REGISTRY = 'localhost:8081' // Change to 8082 or 8083 if Docker registry is on different port
         DOCKER_USERNAME = 'monish1999'
-        DOCKER_PASSWORD = credentials('docker-password') // Store Monish@007 as secret
+        DOCKER_PASSWORD = 'Monish@007' // Store Monish@007 as secret
         NEXUS_URL = 'http://localhost:8081/'
         NEXUS_USERNAME = 'admin'
-        NEXUS_PASSWORD = credentials('nexus-password') // Store Monish@007 as secret
+        NEXUS_PASSWORD = 'Monish@007 // Store Monish@007 as secret
         
         // SonarQube Configuration
         SONAR_TOKEN = credentials('sonar-token') // Store your SonarQube token
@@ -99,24 +99,43 @@ pipeline {
             }
         }
         
-        stage('Quality Gate') {
+        stage('Quality Gate - 80% Coverage Required') {
             steps {
-                echo 'Waiting for Quality Gate...'
+                echo 'Waiting for SonarQube Quality Gate (80% coverage required)...'
                 script {
                     timeout(time: 5, unit: 'MINUTES') {
                         def qg = waitForQualityGate()
                         if (qg.status != 'OK') {
-                            error "Quality Gate failed: ${qg.status}"
+                            error """
+                                ============================================
+                                QUALITY GATE FAILED - Pipeline Stopped
+                                ============================================
+                                Status: ${qg.status}
+                                Reason: Code coverage or quality metrics did not meet the 80% threshold
+                                
+                                The pipeline will NOT proceed to Docker/Nexus stages.
+                                Please fix the code quality issues and try again.
+                                ============================================
+                            """
                         }
-                        echo "Quality Gate passed: ${qg.status}"
+                        echo """
+                            ============================================
+                            QUALITY GATE PASSED ✓
+                            ============================================
+                            Status: ${qg.status}
+                            Code coverage meets 80% requirement
+                            Proceeding to Docker build and Nexus deployment...
+                            ============================================
+                        """
                     }
                 }
             }
         }
         
         stage('Build Docker Image') {
+            // This stage only runs if Quality Gate passed (pipeline continues on success)
             steps {
-                echo 'Building Docker image...'
+                echo '✓ Quality Gate passed! Building Docker image...'
                 script {
                     sh """
                         docker build -t ${IMAGE_NAME}:${IMAGE_TAG} .
@@ -127,8 +146,9 @@ pipeline {
         }
         
         stage('Push to Nexus') {
+            // This stage only runs if previous stages succeeded
             steps {
-                echo 'Pushing Docker image to Nexus...'
+                echo 'Pushing Docker image to Nexus repository...'
                 script {
                     sh """
                         docker login -u ${DOCKER_USERNAME} -p ${DOCKER_PASSWORD} ${DOCKER_REGISTRY}
@@ -142,6 +162,7 @@ pipeline {
         }
         
         stage('Deploy Docker Container') {
+            // This stage only runs if previous stages succeeded
             steps {
                 echo 'Deploying Docker container...'
                 script {
@@ -167,19 +188,38 @@ pipeline {
     
     post {
         success {
-            echo 'Pipeline completed successfully!'
-            // Optional: Send notifications
+            echo """
+                ============================================
+                ✓ PIPELINE COMPLETED SUCCESSFULLY
+                ============================================
+                ✓ Quality Gate passed (80% coverage met)
+                ✓ Docker image built and pushed to Nexus
+                ✓ Container deployed successfully
+                ============================================
+            """
         }
         failure {
-            echo 'Pipeline failed!'
-            // Optional: Send failure notifications
+            script {
+                def failureStage = env.STAGE_NAME ?: 'Unknown'
+                echo """
+                    ============================================
+                    ✗ PIPELINE FAILED
+                    ============================================
+                    Failed at stage: ${failureStage}
+                    
+                    If Quality Gate failed:
+                    - Code coverage did not meet 80% requirement
+                    - Fix code quality issues and try again
+                    - Docker/Nexus stages were NOT executed
+                    ============================================
+                """
+            }
         }
         always {
-            echo 'Cleaning up...'
-            // Clean up Docker images to save space
+            echo 'Cleaning up temporary files...'
+            // Clean up Docker images to save space (keep only if successful)
             sh 'docker image prune -f || true'
         }
     }
 }
-
 
