@@ -2,19 +2,17 @@ pipeline {
     agent any
     
     environment {
-        DOCKER_REGISTRY = 'localhost:8081' // Change to 8082 or 8083 if Docker registry is on different port
+        DOCKER_REGISTRY = 'localhost:8081'
         DOCKER_USERNAME = 'monish1999'
-        DOCKER_PASSWORD = 'Monish@007' // Store Monish@007 as secret
+        DOCKER_PASSWORD = 'Monish@007' // Store securely in Jenkins
         NEXUS_URL = 'http://localhost:8081/'
         NEXUS_USERNAME = 'admin'
-        NEXUS_PASSWORD = 'Monish@007 // Store Monish@007 as secret
+        NEXUS_PASSWORD = 'Monish@007' // Store securely in Jenkins
         
-        // SonarQube Configuration
-        SONAR_TOKEN = credentials('sonar-token') // Store your SonarQube token
-        SONAR_HOST_URL = 'http://localhost:9000' // Update if SonarQube is on different port
+        SONAR_TOKEN = credentials('sonar-token')
+        SONAR_HOST_URL = 'http://localhost:9000'
         SONAR_PROJECT_KEY = 'sqp_6722f360d8d41d26f380967b3b80976e6b7d61ac' // Demo project
         
-        // Image Configuration
         IMAGE_NAME = 'test-app'
         IMAGE_TAG = "${env.BUILD_NUMBER}"
         NEXUS_REPO = 'docker-local'
@@ -222,4 +220,5 @@ pipeline {
         }
     }
 }
+
 
