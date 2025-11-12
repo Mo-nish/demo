@@ -93,10 +93,13 @@ pipeline {
             steps {
                 echo 'Running SonarQube analysis with @sonar/scan...'
                 script {
-                    // Use withSonarQubeEnv if installation name is provided, otherwise use direct connection
-                    if (env.SONAR_INSTALLATION_NAME && env.SONAR_INSTALLATION_NAME.trim()) {
-                        echo "Using SonarQube installation: ${SONAR_INSTALLATION_NAME}"
-                        withSonarQubeEnv("${SONAR_INSTALLATION_NAME}") {
+                    // Always use withSonarQubeEnv wrapper (required for waitForQualityGate)
+                    // If no installation name is set, try to use default or create a minimal wrapper
+                    def installationName = env.SONAR_INSTALLATION_NAME && env.SONAR_INSTALLATION_NAME.trim() ? "${SONAR_INSTALLATION_NAME}" : 'SonarQube'
+                    
+                    try {
+                        echo "Using SonarQube installation: ${installationName}"
+                        withSonarQubeEnv("${installationName}") {
                             sh """
                                 npx sonar \\
                                     -Dsonar.projectKey=${SONAR_PROJECT_KEY} \\
@@ -107,17 +110,33 @@ pipeline {
                                     -Dsonar.coverage.exclusions=**/*.test.js
                             """
                         }
-                    } else {
-                        echo "Using direct SonarQube connection (no installation name specified)"
-                        sh """
-                            npx sonar \\
-                                -Dsonar.projectKey=${SONAR_PROJECT_KEY} \\
-                                -Dsonar.host.url=${SONAR_HOST_URL} \\
-                                -Dsonar.token=${SONAR_TOKEN} \\
-                                -Dsonar.exclusions=node_modules/**,coverage/**,**/*.test.js \\
-                                -Dsonar.javascript.lcov.reportPaths=coverage/lcov.info \\
-                                -Dsonar.coverage.exclusions=**/*.test.js
-                        """
+                    } catch (Exception e) {
+                        echo "Warning: Could not use withSonarQubeEnv with '${installationName}'. Error: ${e.message}"
+                        echo "Running analysis directly and will check quality gate via API..."
+                        // Run analysis directly
+                        def analysisOutput = sh(
+                            script: """
+                                npx sonar \\
+                                    -Dsonar.projectKey=${SONAR_PROJECT_KEY} \\
+                                    -Dsonar.host.url=${SONAR_HOST_URL} \\
+                                    -Dsonar.token=${SONAR_TOKEN} \\
+                                    -Dsonar.exclusions=node_modules/**,coverage/**,**/*.test.js \\
+                                    -Dsonar.javascript.lcov.reportPaths=coverage/lcov.info \\
+                                    -Dsonar.coverage.exclusions=**/*.test.js
+                            """,
+                            returnStdout: true
+                        ).trim()
+                        
+                        // Store flag that we need to check quality gate via API
+                        env.SONAR_ANALYSIS_DIRECT = 'true'
+                        
+                        // Check if quality gate passed in the output
+                        if (analysisOutput.contains('QUALITY GATE STATUS: PASSED')) {
+                            echo 'Quality Gate PASSED (verified from analysis output)'
+                            env.SONAR_QUALITY_GATE_PASSED = 'true'
+                        } else if (analysisOutput.contains('QUALITY GATE STATUS: FAILED')) {
+                            error 'Quality Gate FAILED - Pipeline stopped'
+                        }
                     }
                 }
             }
@@ -127,38 +146,97 @@ pipeline {
             steps {
                 echo 'Waiting for SonarQube Quality Gate (80% coverage required)...'
                 script {
-                    timeout(time: 5, unit: 'MINUTES') {
-                        def qg
-                        // Use waitForQualityGate with installation name if provided
-                        if (env.SONAR_INSTALLATION_NAME && env.SONAR_INSTALLATION_NAME.trim()) {
-                            qg = waitForQualityGate(installationName: "${SONAR_INSTALLATION_NAME}")
+                    // If analysis was run directly (not in withSonarQubeEnv), check via API or use stored result
+                    if (env.SONAR_ANALYSIS_DIRECT == 'true') {
+                        if (env.SONAR_QUALITY_GATE_PASSED == 'true') {
+                            echo """
+                                ============================================
+                                QUALITY GATE PASSED ✓
+                                ============================================
+                                Status: OK (verified from analysis output)
+                                Code coverage meets 80% requirement
+                                Proceeding to Docker build and Nexus deployment...
+                                ============================================
+                            """
                         } else {
-                            // Use default waitForQualityGate (will use default installation or abortKey)
-                            qg = waitForQualityGate(abortPipeline: true)
-                        }
-                        
-                        if (qg.status != 'OK') {
-                            error """
+                            // Check quality gate via SonarQube API (Windows-compatible)
+                            echo 'Checking quality gate status via SonarQube API...'
+                            def qgResponse = sh(
+                                script: """
+                                    powershell -Command "Invoke-RestMethod -Uri '${SONAR_HOST_URL}/api/qualitygates/project_status?projectKey=${SONAR_PROJECT_KEY}' -Headers @{Authorization=('Basic ' + [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes('${SONAR_TOKEN}:')))} | ConvertTo-Json"
+                                """,
+                                returnStdout: true
+                            ).trim()
+                            
+                            // Parse JSON response to get status
+                            def qgStatus = 'UNKNOWN'
+                            if (qgResponse.contains('"status"')) {
+                                def statusMatch = qgResponse =~ /"status"\s*:\s*"([^"]+)"/
+                                if (statusMatch) {
+                                    qgStatus = statusMatch[0][1]
+                                }
+                            }
+                            
+                            if (qgStatus != 'OK') {
+                                error """
+                                    ============================================
+                                    QUALITY GATE FAILED - Pipeline Stopped
+                                    ============================================
+                                    Status: ${qgStatus}
+                                    Reason: Code coverage or quality metrics did not meet the 80% threshold
+                                    
+                                    The pipeline will NOT proceed to Docker/Nexus stages.
+                                    Please fix the code quality issues and try again.
+                                    ============================================
+                                """
+                            }
+                            
+                            echo """
                                 ============================================
-                                QUALITY GATE FAILED - Pipeline Stopped
+                                QUALITY GATE PASSED ✓
                                 ============================================
-                                Status: ${qg.status}
-                                Reason: Code coverage or quality metrics did not meet the 80% threshold
-                                
-                                The pipeline will NOT proceed to Docker/Nexus stages.
-                                Please fix the code quality issues and try again.
+                                Status: ${qgStatus}
+                                Code coverage meets 80% requirement
+                                Proceeding to Docker build and Nexus deployment...
                                 ============================================
                             """
                         }
-                        echo """
-                            ============================================
-                            QUALITY GATE PASSED ✓
-                            ============================================
-                            Status: ${qg.status}
-                            Code coverage meets 80% requirement
-                            Proceeding to Docker build and Nexus deployment...
-                            ============================================
-                        """
+                    } else {
+                        // Analysis was run in withSonarQubeEnv, use waitForQualityGate
+                        timeout(time: 5, unit: 'MINUTES') {
+                            def qg
+                            def installationName = env.SONAR_INSTALLATION_NAME && env.SONAR_INSTALLATION_NAME.trim() ? "${SONAR_INSTALLATION_NAME}" : 'SonarQube'
+                            
+                            try {
+                                qg = waitForQualityGate(installationName: "${installationName}")
+                            } catch (Exception e) {
+                                echo "Warning: waitForQualityGate failed with installation name. Trying default..."
+                                qg = waitForQualityGate(abortPipeline: true)
+                            }
+                            
+                            if (qg.status != 'OK') {
+                                error """
+                                    ============================================
+                                    QUALITY GATE FAILED - Pipeline Stopped
+                                    ============================================
+                                    Status: ${qg.status}
+                                    Reason: Code coverage or quality metrics did not meet the 80% threshold
+                                    
+                                    The pipeline will NOT proceed to Docker/Nexus stages.
+                                    Please fix the code quality issues and try again.
+                                    ============================================
+                                """
+                            }
+                            echo """
+                                ============================================
+                                QUALITY GATE PASSED ✓
+                                ============================================
+                                Status: ${qg.status}
+                                Code coverage meets 80% requirement
+                                Proceeding to Docker build and Nexus deployment...
+                                ============================================
+                            """
+                        }
                     }
                 }
             }
@@ -254,5 +332,4 @@ pipeline {
         }
     }
 }
-
 
