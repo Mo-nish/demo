@@ -2,15 +2,10 @@ pipeline {
     agent any
     
     environment {
-        // Docker Registry Configuration
-        // Note: Nexus Docker registry might be on port 8082 or 8083, not 8081
-        // Port 8081 is typically for Nexus UI. Update if needed.
-        DOCKER_REGISTRY = 'localhost:8081' // Change to 8082 or 8083 if Docker registry is on different port
-        DOCKER_USERNAME = 'monish1999'
-        DOCKER_PASSWORD = 'Monish@007'
-        NEXUS_URL = 'http://localhost:8081/'
-        NEXUS_USERNAME = 'admin'
-        NEXUS_PASSWORD = 'Monish@007'
+        // Docker Hub Configuration
+        DOCKER_HUB_USERNAME = 'monish1999'
+        DOCKER_HUB_PASSWORD = 'Monish@007'
+        DOCKER_HUB_REGISTRY = 'docker.io' // Docker Hub registry
         
         // SonarQube Configuration
         SONAR_TOKEN = 'sqp_6722f360d8d41d26f380967b3b80976e6b7d61ac'
@@ -24,7 +19,7 @@ pipeline {
         // Image Configuration
         IMAGE_NAME = 'test-app'
         IMAGE_TAG = "${env.BUILD_NUMBER}"
-        NEXUS_REPO = 'docker-local'
+        DOCKER_HUB_IMAGE = "${DOCKER_HUB_USERNAME}/${IMAGE_NAME}" // Full Docker Hub image path
     }
     
     stages {
@@ -255,17 +250,17 @@ pipeline {
             }
         }
         
-        stage('Push to Nexus') {
+        stage('Push to Docker Hub') {
             // This stage only runs if previous stages succeeded
             steps {
-                echo 'Pushing Docker image to Nexus repository...'
+                echo 'Pushing Docker image to Docker Hub...'
                 script {
                     sh """
-                        docker login -u ${DOCKER_USERNAME} -p ${DOCKER_PASSWORD} ${DOCKER_REGISTRY}
-                        docker tag ${IMAGE_NAME}:${IMAGE_TAG} ${DOCKER_REGISTRY}/${NEXUS_REPO}/${IMAGE_NAME}:${IMAGE_TAG}
-                        docker tag ${IMAGE_NAME}:${IMAGE_TAG} ${DOCKER_REGISTRY}/${NEXUS_REPO}/${IMAGE_NAME}:latest
-                        docker push ${DOCKER_REGISTRY}/${NEXUS_REPO}/${IMAGE_NAME}:${IMAGE_TAG}
-                        docker push ${DOCKER_REGISTRY}/${NEXUS_REPO}/${IMAGE_NAME}:latest
+                        docker login -u ${DOCKER_HUB_USERNAME} -p ${DOCKER_HUB_PASSWORD}
+                        docker tag ${IMAGE_NAME}:${IMAGE_TAG} ${DOCKER_HUB_IMAGE}:${IMAGE_TAG}
+                        docker tag ${IMAGE_NAME}:${IMAGE_TAG} ${DOCKER_HUB_IMAGE}:latest
+                        docker push ${DOCKER_HUB_IMAGE}:${IMAGE_TAG}
+                        docker push ${DOCKER_HUB_IMAGE}:latest
                     """
                 }
             }
@@ -274,22 +269,22 @@ pipeline {
         stage('Deploy Docker Container') {
             // This stage only runs if previous stages succeeded
             steps {
-                echo 'Deploying Docker container...'
+                echo 'Deploying Docker container from Docker Hub...'
                 script {
                     sh """
                         # Stop and remove existing container if it exists
                         docker stop ${IMAGE_NAME} || true
                         docker rm ${IMAGE_NAME} || true
                         
-                        # Pull the latest image from Nexus
-                        docker pull ${DOCKER_REGISTRY}/${NEXUS_REPO}/${IMAGE_NAME}:${IMAGE_TAG}
+                        # Pull the latest image from Docker Hub
+                        docker pull ${DOCKER_HUB_IMAGE}:${IMAGE_TAG}
                         
                         # Run the new container
                         docker run -d \\
                             --name ${IMAGE_NAME} \\
                             -p 3000:3000 \\
                             --restart unless-stopped \\
-                            ${DOCKER_REGISTRY}/${NEXUS_REPO}/${IMAGE_NAME}:${IMAGE_TAG}
+                            ${DOCKER_HUB_IMAGE}:${IMAGE_TAG}
                     """
                 }
             }
@@ -303,7 +298,7 @@ pipeline {
                 ✓ PIPELINE COMPLETED SUCCESSFULLY
                 ============================================
                 ✓ Quality Gate passed (80% coverage met)
-                ✓ Docker image built and pushed to Nexus
+                ✓ Docker image built and pushed to Docker Hub
                 ✓ Container deployed successfully
                 ============================================
             """
@@ -320,7 +315,7 @@ pipeline {
                     If Quality Gate failed:
                     - Code coverage did not meet 80% requirement
                     - Fix code quality issues and try again
-                    - Docker/Nexus stages were NOT executed
+                    - Docker/Docker Hub stages were NOT executed
                     ============================================
                 """
             }
@@ -332,4 +327,3 @@ pipeline {
         }
     }
 }
-
