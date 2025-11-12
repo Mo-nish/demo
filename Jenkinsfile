@@ -4,10 +4,10 @@ pipeline {
     environment {
         DOCKER_REGISTRY = 'localhost:8081'
         DOCKER_USERNAME = 'monish1999'
-        DOCKER_PASSWORD = credentials('docker-password')   // store securely in Jenkins
+        DOCKER_PASSWORD = 'Monish@007'
         NEXUS_URL = 'http://localhost:8081/'
         NEXUS_USERNAME = 'admin'
-        NEXUS_PASSWORD = credentials('nexus-password')     // store securely in Jenkins
+        NEXUS_PASSWORD = 'Monish@007'
 
         SONAR_TOKEN = 'squ_f17e809711f9b6fd74857777abb29b6059efaed9'
         SONAR_HOST_URL = 'http://localhost:9000'
@@ -147,3 +147,4 @@ pipeline {
         }
     }
 }
+
