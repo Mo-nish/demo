@@ -2,10 +2,7 @@ pipeline {
     agent any
     
     environment {
-        // Docker Registry Configuration
-        // Note: Nexus Docker registry might be on port 8082 or 8083, not 8081
-        // Port 8081 is typically for Nexus UI. Update if needed.
-        DOCKER_REGISTRY = 'localhost:8081' // Change to 8082 or 8083 if Docker registry is on different port
+        DOCKER_REGISTRY = 'localhost:8081' 
         DOCKER_USERNAME = 'monish1999'
         DOCKER_PASSWORD = credentials('docker-password') // Store Monish@007 as secret
         NEXUS_URL = 'http://localhost:8081/'
@@ -184,4 +181,5 @@ pipeline {
         }
     }
 }
+
 
