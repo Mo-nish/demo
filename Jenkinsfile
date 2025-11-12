@@ -9,7 +9,7 @@ pipeline {
         NEXUS_USERNAME = 'admin'
         NEXUS_PASSWORD = 'Monish@007' // Store securely in Jenkins
         
-        SONAR_TOKEN = credentials('sonar-token')
+        SONAR_TOKEN = squ_f17e809711f9b6fd74857777abb29b6059efaed9
         SONAR_HOST_URL = 'http://localhost:9000'
         SONAR_PROJECT_KEY = 'sqp_6722f360d8d41d26f380967b3b80976e6b7d61ac' // Demo project
         
@@ -220,5 +220,6 @@ pipeline {
         }
     }
 }
+
 
 
