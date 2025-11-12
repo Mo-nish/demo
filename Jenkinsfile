@@ -7,10 +7,10 @@ pipeline {
         // Port 8081 is typically for Nexus UI. Update if needed.
         DOCKER_REGISTRY = 'localhost:8081' // Change to 8082 or 8083 if Docker registry is on different port
         DOCKER_USERNAME = 'monish1999'
-        DOCKER_PASSWORD = credentials('docker-password') // Store Monish@007 as secret
+        DOCKER_PASSWORD = 'Monish@007'
         NEXUS_URL = 'http://localhost:8081/'
         NEXUS_USERNAME = 'admin'
-        NEXUS_PASSWORD = credentials('nexus-password') // Store Monish@007 as secret
+        NEXUS_PASSWORD = 'Monish@007'
         
         // SonarQube Configuration
         SONAR_TOKEN = 'squ_f17e809711f9b6fd74857777abb29b6059efaed9'
@@ -225,4 +225,5 @@ pipeline {
         }
     }
 }
+
 
