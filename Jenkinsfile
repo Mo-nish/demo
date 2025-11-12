@@ -13,9 +13,13 @@ pipeline {
         NEXUS_PASSWORD = 'Monish@007'
         
         // SonarQube Configuration
-        SONAR_TOKEN = 'squ_f17e809711f9b6fd74857777abb29b6059efaed9'
+        SONAR_TOKEN = credentials('sonar-token') // Store your SonarQube token (sqp_6722f360d8d41d26f380967b3b80976e6b7d61ac)
         SONAR_HOST_URL = 'http://localhost:9000' // Update if SonarQube is on different port
-        SONAR_PROJECT_KEY = 'sqp_6722f360d8d41d26f380967b3b80976e6b7d61ac' // Demo project
+        SONAR_PROJECT_KEY = 'Demo' // Project key in SonarQube
+        // SonarQube installation name in Jenkins (leave empty to use direct connection)
+        // Check your SonarQube installation name in: Manage Jenkins → Configure System → SonarQube servers
+        // If you have 2 installations, set this to one of their names, or leave empty to skip withSonarQubeEnv
+        SONAR_INSTALLATION_NAME = '' // Set to your SonarQube installation name, or leave empty
         
         // Image Configuration
         IMAGE_NAME = 'test-app'
@@ -73,46 +77,45 @@ pipeline {
             }
         }
         
-        stage('Install SonarScanner') {
+        stage('Install SonarQube Scanner for npm') {
             steps {
                 script {
-                    echo 'Installing SonarScanner...'
-                    // Check if SonarScanner is already installed
-                    def sonarScannerInstalled = sh(
-                        script: 'which sonar-scanner || echo "not found"',
-                        returnStdout: true
-                    ).trim()
-                    
-                    if (sonarScannerInstalled == 'not found') {
-                        echo 'SonarScanner not found. Installing...'
-                        // Install SonarScanner
-                        sh '''
-                            wget https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-cli-5.0.1.3006-linux.zip -O /tmp/sonar-scanner.zip
-                            unzip -q /tmp/sonar-scanner.zip -d /tmp/
-                            sudo mv /tmp/sonar-scanner-5.0.1.3006-linux /opt/sonar-scanner
-                            sudo ln -s /opt/sonar-scanner/bin/sonar-scanner /usr/local/bin/sonar-scanner
-                            rm /tmp/sonar-scanner.zip
-                        '''
-                    } else {
-                        echo 'SonarScanner already installed'
-                    }
+                    echo 'Installing SonarQube Scanner for npm (@sonar/scan)...'
+                    // Install SonarQube Scanner for npm projects globally
+                    // Using npx will work even if not globally installed, but global install is faster
+                    sh 'npm install -g @sonar/scan || echo "Global install failed, will use npx instead"'
+                    echo 'SonarQube Scanner installation completed (using npx sonar for execution)'
                 }
             }
         }
         
         stage('SonarQube Analysis') {
             steps {
-                echo 'Running SonarQube analysis...'
+                echo 'Running SonarQube analysis with @sonar/scan...'
                 script {
-                    withSonarQubeEnv('SonarQube') {
+                    // Use withSonarQubeEnv if installation name is provided, otherwise use direct connection
+                    if (env.SONAR_INSTALLATION_NAME && env.SONAR_INSTALLATION_NAME.trim()) {
+                        echo "Using SonarQube installation: ${SONAR_INSTALLATION_NAME}"
+                        withSonarQubeEnv("${SONAR_INSTALLATION_NAME}") {
+                            sh """
+                                npx sonar \\
+                                    -Dsonar.projectKey=${SONAR_PROJECT_KEY} \\
+                                    -Dsonar.host.url=${SONAR_HOST_URL} \\
+                                    -Dsonar.token=${SONAR_TOKEN} \\
+                                    -Dsonar.exclusions=node_modules/**,coverage/**,**/*.test.js \\
+                                    -Dsonar.javascript.lcov.reportPaths=coverage/lcov.info \\
+                                    -Dsonar.coverage.exclusions=**/*.test.js
+                            """
+                        }
+                    } else {
+                        echo "Using direct SonarQube connection (no installation name specified)"
                         sh """
-                            sonar-scanner \
-                                -Dsonar.projectKey=${SONAR_PROJECT_KEY} \
-                                -Dsonar.sources=. \
-                                -Dsonar.host.url=${SONAR_HOST_URL} \
-                                -Dsonar.login=${SONAR_TOKEN} \
-                                -Dsonar.exclusions=node_modules/**,coverage/**,**/*.test.js \
-                                -Dsonar.javascript.lcov.reportPaths=coverage/lcov.info \
+                            npx sonar \\
+                                -Dsonar.projectKey=${SONAR_PROJECT_KEY} \\
+                                -Dsonar.host.url=${SONAR_HOST_URL} \\
+                                -Dsonar.token=${SONAR_TOKEN} \\
+                                -Dsonar.exclusions=node_modules/**,coverage/**,**/*.test.js \\
+                                -Dsonar.javascript.lcov.reportPaths=coverage/lcov.info \\
                                 -Dsonar.coverage.exclusions=**/*.test.js
                         """
                     }
@@ -125,7 +128,15 @@ pipeline {
                 echo 'Waiting for SonarQube Quality Gate (80% coverage required)...'
                 script {
                     timeout(time: 5, unit: 'MINUTES') {
-                        def qg = waitForQualityGate()
+                        def qg
+                        // Use waitForQualityGate with installation name if provided
+                        if (env.SONAR_INSTALLATION_NAME && env.SONAR_INSTALLATION_NAME.trim()) {
+                            qg = waitForQualityGate(installationName: "${SONAR_INSTALLATION_NAME}")
+                        } else {
+                            // Use default waitForQualityGate (will use default installation or abortKey)
+                            qg = waitForQualityGate(abortPipeline: true)
+                        }
+                        
                         if (qg.status != 'OK') {
                             error """
                                 ============================================
