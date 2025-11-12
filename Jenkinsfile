@@ -41,16 +41,34 @@ pipeline {
         stage('Run Tests') {
             steps {
                 echo 'Running tests with coverage...'
-                sh 'npm run test:coverage'
+                script {
+                    // Check if test:coverage script exists, if not use test with coverage flag
+                    def packageJson = readJSON file: 'package.json'
+                    def hasCoverageScript = packageJson.scripts && packageJson.scripts['test:coverage']
+                    
+                    if (hasCoverageScript) {
+                        sh 'npm run test:coverage'
+                    } else {
+                        echo 'test:coverage script not found, running jest with --coverage flag directly...'
+                        sh 'npx jest --coverage'
+                    }
+                }
             }
             post {
                 always {
-                    // Publish coverage reports
-                    publishHTML([
-                        reportDir: 'coverage',
-                        reportFiles: 'index.html',
-                        reportName: 'Coverage Report'
-                    ])
+                    // Publish coverage reports only if coverage directory exists
+                    script {
+                        def coverageExists = fileExists 'coverage/index.html'
+                        if (coverageExists) {
+                            publishHTML([
+                                reportDir: 'coverage',
+                                reportFiles: 'index.html',
+                                reportName: 'Coverage Report'
+                            ])
+                        } else {
+                            echo 'Coverage report not found, skipping HTML publish'
+                        }
+                    }
                 }
             }
         }
@@ -225,5 +243,4 @@ pipeline {
         }
     }
 }
-
 
